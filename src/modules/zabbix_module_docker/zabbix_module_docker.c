@@ -320,77 +320,6 @@ int     zbx_docker_api_detect()
 
 /******************************************************************************
  *                                                                            *
- * Function: zbx_module_docker_discover_ports                                 *
- *                                                                            *
- * Purpose: container port forwarding discovery                               *
- *                                                                            *
- * Return value: SYSINFO_RET_FAIL - function failed, item will be marked      *
- *                                 as not supported by zabbix                 *
- *               SYSINFO_RET_OK - success                                     *
- *                                                                            *
- ******************************************************************************/
-int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *result)
-{
-        zabbix_log(LOG_LEVEL_DEBUG, "In zbx_module_docker_discover_ports()");
-
-        if (1 != request->nparam)
-        {
-                zabbix_log(LOG_LEVEL_ERR, "Invalid number of parameters: %d",  request->nparam);
-                SET_STR_RESULT(result, zbx_strdup(NULL, "Invalid number of parameters"));
-                return SYSINFO_RET_FAIL;
-        }
-
-        char *container;
-        container = get_rparam(container, 0);
-
-        AGENT_REQUEST       request2;
-        init_request(&request2);
-        add_request_param(&request2, zbx_strdup(NULL,container));
-        add_request_param(&request2, zbx_strdup(NULL,"HostConfig"));
-        add_request_param(&request2, zbx_strdup(NULL,"PortBindings"));
-        struct inspect_result iresult;
-        iresult = zbx_module_docker_inspect_exec(&request2);
-        free_request(&request2);
-        if (iresult.return_code == SYSINFO_RET_FAIL) {
-            zabbix_log(LOG_LEVEL_DEBUG, "zbx_module_docker_inspect_exec FAIL: %s", iresult.value);
-            return SYSINFO_RET_FAIL;
-        }
-
-        // now parse the value we get back from zbx_module_docker_inspect_exec()
-        struct zbx_json_parse jp_data = {&iresult.value, &iresult.value[strlen(iresult.value)]};
-
-        char			buf[10], host_port[6];
-        const char		*p = NULL, *proto = NULL;
-	struct zbx_json_parse	jp_obj;
-
-        struct zbx_json j;
-        zbx_json_init(&j, ZBX_JSON_STAT_BUF_LEN);
-        zbx_json_addarray(&j, ZBX_PROTO_TAG_DATA);
-
-        while (NULL != (p = zbx_json_pair_next(jp_data, p, buf, sizeof(buf))))
-        {
-                // Split "12345/tcp" specifier
-                proto = strstr(buf, "/") + 1;
-
-		if (FAIL == zbx_json_brackets_open(p, &jp_obj) || FAIL == zbx_json_value_by_name(&jp_obj, "HostPort", host_port, sizeof(host_port)))
-		{
-			continue;
-		}
-
-                zbx_json_addobject(&j, NULL);
-                zbx_json_addstring(&j, "{#PORT}", host_port, ZBX_JSON_TYPE_STRING);
-                zbx_json_addstring(&j, "{#PROTO}", proto, ZBX_JSON_TYPE_STRING);
-                zbx_json_close(&j);
-
-        }
-        zbx_json_close(&j);
-        SET_STR_RESULT(result, zbx_strdup(NULL, j.buffer));
-        zbx_json_free(&j);
-
-        return SYSINFO_RET_OK;
-}
-/******************************************************************************
- *                                                                            *
  * Function: zbx_module_docker_inspect_exec                                   *
  *                                                                            *
  * Purpose: container inspection                                              *
@@ -595,6 +524,78 @@ struct inspect_result     zbx_module_docker_inspect_exec(AGENT_REQUEST *request)
         iresult.value = zbx_strdup(NULL, "");
         iresult.return_code = SYSINFO_RET_OK;
         return iresult;
+}
+
+/******************************************************************************
+ *                                                                            *
+ * Function: zbx_module_docker_discover_ports                                 *
+ *                                                                            *
+ * Purpose: container port forwarding discovery                               *
+ *                                                                            *
+ * Return value: SYSINFO_RET_FAIL - function failed, item will be marked      *
+ *                                 as not supported by zabbix                 *
+ *               SYSINFO_RET_OK - success                                     *
+ *                                                                            *
+ ******************************************************************************/
+int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *result)
+{
+        zabbix_log(LOG_LEVEL_DEBUG, "In zbx_module_docker_discover_ports()");
+
+        if (1 != request->nparam)
+        {
+                zabbix_log(LOG_LEVEL_ERR, "Invalid number of parameters: %d",  request->nparam);
+                SET_STR_RESULT(result, zbx_strdup(NULL, "Invalid number of parameters"));
+                return SYSINFO_RET_FAIL;
+        }
+
+        char *container;
+        container = get_rparam(request, 0);
+
+        AGENT_REQUEST       request2;
+        init_request(&request2);
+        add_request_param(&request2, zbx_strdup(NULL,container));
+        add_request_param(&request2, zbx_strdup(NULL,"HostConfig"));
+        add_request_param(&request2, zbx_strdup(NULL,"PortBindings"));
+        struct inspect_result iresult;
+        iresult = zbx_module_docker_inspect_exec(&request2);
+        free_request(&request2);
+        if (iresult.return_code == SYSINFO_RET_FAIL) {
+            zabbix_log(LOG_LEVEL_DEBUG, "zbx_module_docker_inspect_exec FAIL: %s", iresult.value);
+            return SYSINFO_RET_FAIL;
+        }
+
+        // now parse the value we get back from zbx_module_docker_inspect_exec()
+        struct zbx_json_parse jp_data = {iresult.value, &iresult.value[strlen(iresult.value)]};
+
+        char			buf[10], host_port[6];
+        const char		*p = NULL, *proto = NULL;
+	struct zbx_json_parse	jp_obj;
+
+        struct zbx_json j;
+        zbx_json_init(&j, ZBX_JSON_STAT_BUF_LEN);
+        zbx_json_addarray(&j, ZBX_PROTO_TAG_DATA);
+
+        while (NULL != (p = zbx_json_pair_next(&jp_data, p, buf, sizeof(buf))))
+        {
+                // Split "12345/tcp" specifier
+                proto = strstr(buf, "/") + 1;
+
+		if (FAIL == zbx_json_brackets_open(p, &jp_obj) || FAIL == zbx_json_value_by_name(&jp_obj, "HostPort", host_port, sizeof(host_port)))
+		{
+			continue;
+		}
+
+                zbx_json_addobject(&j, NULL);
+                zbx_json_addstring(&j, "{#PORT}", host_port, ZBX_JSON_TYPE_STRING);
+                zbx_json_addstring(&j, "{#PROTO}", proto, ZBX_JSON_TYPE_STRING);
+                zbx_json_close(&j);
+
+        }
+        zbx_json_close(&j);
+        SET_STR_RESULT(result, zbx_strdup(NULL, j.buffer));
+        zbx_json_free(&j);
+
+        return SYSINFO_RET_OK;
 }
 
 /******************************************************************************
