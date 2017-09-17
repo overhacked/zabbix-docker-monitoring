@@ -567,8 +567,9 @@ int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *r
         // now parse the value we get back from zbx_module_docker_inspect_exec()
         struct zbx_json_parse jp_data = {iresult.value, &iresult.value[strlen(iresult.value)]};
 
-        char			buf[10], host_port[6];
-        const char		*p = NULL, *proto = NULL;
+        char			buf[10], host_port[6], container_port[6];
+        int                     port_len;
+        const char		*p = NULL, *p2 = NULL, *proto = NULL;
 	struct zbx_json_parse	jp_obj;
 
         struct zbx_json j;
@@ -579,14 +580,34 @@ int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *r
         {
                 // Split "12345/tcp" specifier
                 proto = strstr(buf, "/") + 1;
+                port_len = proto - buf;
+                zbx_strlcpy(container_port, buf, port_len);
 
-		if (FAIL == zbx_json_brackets_open(p, &jp_obj) || FAIL == zbx_json_value_by_name(&jp_obj, "HostPort", host_port, sizeof(host_port)))
+                // Open list of HostIP/HostPort dicts 
+		if (FAIL == zbx_json_brackets_open(p, &jp_obj))
 		{
-			continue;
+                    zabbix_log(LOG_LEVEL_DEBUG, "zbx_json_brackets_open FAIL: %s", zbx_json_strerror());
+                    continue;
 		}
 
+                // Open dict of HostIP, HostPort values
+                p2 = zbx_json_next(&jp_obj,NULL);
+		if (FAIL == zbx_json_brackets_open(p2, &jp_obj))
+		{
+                    zabbix_log(LOG_LEVEL_DEBUG, "zbx_json_brackets_open FAIL: %s", zbx_json_strerror());
+                    continue;
+		}
+
+                // Lookup HostPort value
+                if (FAIL == zbx_json_value_by_name(&jp_obj, "HostPort", host_port, sizeof(host_port)))
+                {
+                    zabbix_log(LOG_LEVEL_DEBUG, "zbx_json_value_by_name FAIL: %s", zbx_json_strerror());
+                    continue;
+                }
+
                 zbx_json_addobject(&j, NULL);
-                zbx_json_addstring(&j, "{#PORT}", host_port, ZBX_JSON_TYPE_STRING);
+                zbx_json_addstring(&j, "{#HOSTPORT}", host_port, ZBX_JSON_TYPE_STRING);
+                zbx_json_addstring(&j, "{#CONTAINERPORT}", container_port, ZBX_JSON_TYPE_STRING);
                 zbx_json_addstring(&j, "{#PROTO}", proto, ZBX_JSON_TYPE_STRING);
                 zbx_json_close(&j);
 
