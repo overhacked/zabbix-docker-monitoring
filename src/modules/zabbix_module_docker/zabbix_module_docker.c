@@ -70,7 +70,7 @@ static ZBX_METRIC keys[] =
 /*      KEY                     FLAG            FUNCTION                TEST PARAMETERS */
 {
         {"docker.discovery", CF_HAVEPARAMS, zbx_module_docker_discovery,    "<parameter 1>, <parameter 2>, <parameter 3>"},
-        {"docker.discover_ports", CF_HAVEPARAMS, zbx_module_docker_discover_ports, "full container id"},
+        {"docker.discover_ports", CF_HAVEPARAMS, zbx_module_docker_discover_ports, "full container id, <protocol>"},
         {"docker.inspect", CF_HAVEPARAMS, zbx_module_docker_inspect, "full container id, parameter 1, <parameter 2>"},
         {"docker.cstatus", CF_HAVEPARAMS, zbx_module_docker_cstatus, "status"},
         {"docker.istatus", CF_HAVEPARAMS, zbx_module_docker_istatus, "status"},
@@ -541,7 +541,7 @@ int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *r
 {
         zabbix_log(LOG_LEVEL_DEBUG, "In zbx_module_docker_discover_ports()");
 
-        if (1 != request->nparam)
+        if (2 < request->nparam)
         {
                 zabbix_log(LOG_LEVEL_ERR, "Invalid number of parameters: %d",  request->nparam);
                 SET_STR_RESULT(result, zbx_strdup(NULL, "Invalid number of parameters"));
@@ -569,19 +569,28 @@ int     zbx_module_docker_discover_ports(AGENT_REQUEST *request, AGENT_RESULT *r
 
         char			buf[10], host_port[6], container_port[6];
         int                     port_len;
-        const char		*p = NULL, *p2 = NULL, *proto = NULL;
+        const char		*p = NULL, *p2 = NULL, *proto = NULL, *request_proto = NULL;
 	struct zbx_json_parse	jp_obj;
 
         struct zbx_json j;
         zbx_json_init(&j, ZBX_JSON_STAT_BUF_LEN);
         zbx_json_addarray(&j, ZBX_PROTO_TAG_DATA);
 
+        if (1 < request->nparam)
+        {
+            request_proto = get_rparam(request, 1);
+        }
         while (NULL != (p = zbx_json_pair_next(&jp_data, p, buf, sizeof(buf))))
         {
                 // Split "12345/tcp" specifier
                 proto = strstr(buf, "/") + 1;
                 port_len = proto - buf;
                 zbx_strlcpy(container_port, buf, port_len);
+
+                if (NULL != request_proto && '\0' != *request_proto && 0 != strcmp(request_proto, proto))
+                {
+                    continue;
+                }
 
                 // Open list of HostIP/HostPort dicts 
 		if (FAIL == zbx_json_brackets_open(p, &jp_obj))
